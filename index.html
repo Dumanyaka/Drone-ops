@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#0b1720"><title>DRONE OPS — навчальний симулятор</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#08131b;color:#e7f3f5;font-family:system-ui,-apple-system,Segoe UI,sans-serif;touch-action:none}
+#app{height:100dvh;width:min(100vw,520px);margin:auto;position:relative;background:#0c1b23;overflow:hidden;border-inline:1px solid #28414a}
+canvas{width:100%;height:100%;display:block}
+.top{position:absolute;top:env(safe-area-inset-top,0px);left:0;right:0;padding:10px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;pointer-events:none}
+.metric{background:#07151ddf;border:1px solid #4a6b70;border-radius:10px;padding:7px 8px;font-size:10px;color:#91adb1;letter-spacing:.08em}
+.metric b{display:block;color:#e7fbf8;font-size:16px;letter-spacing:0;font-variant-numeric:tabular-nums}
+#batterybar{height:4px;background:#29434a;border-radius:5px;margin-top:4px;overflow:hidden}#batteryfill{height:100%;width:100%;background:#64e0ad}
+.bottom{position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);left:12px;right:12px;display:flex;justify-content:space-between;align-items:end;pointer-events:none}
+.pill{background:#07151de8;border:1px solid #4a6b70;border-radius:12px;padding:8px 11px;font-size:11px;color:#b5cbcd}
+#overlay{position:absolute;inset:0;background:#061117dc;display:flex;align-items:center;justify-content:center;padding:22px;backdrop-filter:blur(5px)}
+.panel{max-width:360px;width:100%;border:1px solid #4c7378;border-radius:20px;padding:24px;background:linear-gradient(145deg,#19333a,#0a1921);text-align:center;box-shadow:0 18px 60px #0009}
+h1{margin:0;color:#8ce6cd;font-size:27px;letter-spacing:.07em}p{color:#c1d5d4;line-height:1.5;font-size:14px}
+button{width:100%;padding:14px;border:0;border-radius:12px;background:#83e3c2;color:#08201c;font-weight:850;font-size:15px}
+.small{font-size:11px;color:#8da8aa;margin-top:12px}
+#toast{position:absolute;top:105px;left:50%;transform:translateX(-50%);background:#0a2426eF;border:1px solid #6ad8b5;padding:8px 14px;border-radius:20px;font-size:12px;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap}
+</style></head><body><div id="app">
+<canvas id="cv"></canvas>
+<div class="top">
+ <div class="metric">ВИСОТА<b><span id="alt">12</span> м</b></div>
+ <div class="metric">ШВИДКІСТЬ<b><span id="spd">0</span> км/год</b></div>
+ <div class="metric">АКУМУЛЯТОР<b><span id="bat">100</span>%</b><div id="batterybar"><div id="batteryfill"></div></div></div>
+ <div class="metric">СУПУТНИКИ<b>14 <span style="color:#6ce0b3">● 3D FIX</span></b></div>
+ <div class="metric">ЗВ'ЯЗОК<b><span id="link">100</span>%</b></div>
+ <div class="metric">МІСІЯ<b><span id="wp">0 / 5</span></b></div>
+</div>
+<div id="toast">Контрольну точку пройдено!</div>
+<div class="bottom"><div class="pill">◉ GPS · STABILIZE</div><div class="pill">ТЯГНИ ПАЛЕЦЬ — КЕРУЙ</div></div>
+<div id="overlay"><div class="panel"><div style="font-size:34px;margin-bottom:8px">🚁</div><h1>DRONE OPS</h1><p>Навчальний політ цивільного квадрокоптера. Пройди п'ять контрольних кілець, не зачіпаючи перешкод, і повернись на майданчик.</p><button id="go">ЗАПУСТИТИ ДВИГУНИ</button><div class="small">Керування: перетягуй палець по екрану. Дрон слідує за точкою під пальцем.</div></div></div>
+</div>
+<script>
+(()=>{
+const c=document.getElementById('cv'),g=c.getContext('2d'),$=id=>document.getElementById(id);
+let w,h,dpr,active=false,last=0,battery=100,x=.5,y=.72,vx=0,vy=0,alt=12,score=0,goal=0,toastTimer=0,drag=false,target=null,obstacles=[],rings=[],particles=[];
+function resize(){let r=c.getBoundingClientRect();w=r.width;h=r.height;dpr=Math.min(devicePixelRatio||1,2);c.width=w*dpr;c.height=h*dpr;g.setTransform(dpr,0,0,dpr,0,0);makeCourse()}
+function makeCourse(){obstacles=[{x:.23,y:.34,r:19},{x:.73,y:.25,r:25},{x:.55,y:.52,r:16},{x:.84,y:.68,r:22}];rings=[{x:.25,y:.76},{x:.72,y:.62},{x:.36,y:.43},{x:.78,y:.32},{x:.5,y:.18}]}
+window.addEventListener('resize',resize);resize();
+function showToast(t){$('toast').textContent=t;$('toast').style.opacity=1;toastTimer=1.5}
+function start(){active=true;battery=100;x=.5;y=.78;vx=vy=0;alt=12;goal=0;target=null;makeCourse();$('overlay').style.display='none';last=performance.now();requestAnimationFrame(loop)}
+$('go').onclick=start;
+function pos(e){let r=c.getBoundingClientRect();target={x:Math.max(.06,Math.min(.94,(e.clientX-r.left)/w)),y:Math.max(.1,Math.min(.9,(e.clientY-r.top)/h))}}
+c.addEventListener('pointerdown',e=>{if(active){drag=true;c.setPointerCapture(e.pointerId);pos(e)}});
+c.addEventListener('pointermove',e=>{if(active&&drag)pos(e)});
+c.addEventListener('pointerup',()=>{drag=false;target=null});
+function line(x1,y1,x2,y2,col='#55716e',lw=1){g.strokeStyle=col;g.lineWidth=lw;g.beginPath();g.moveTo(x1,y1);g.lineTo(x2,y2);g.stroke()}
+function draw(now,dt){
+g.clearRect(0,0,w,h);g.fillStyle='#132a2c';g.fillRect(0,0,w,h);
+// stylized terrain grid
+for(let i=0;i<12;i++){let yy=(i*75+(now*.018)%75);line(0,yy,w,yy,'#29434466')}
+for(let i=0;i<9;i++){let xx=i*w/8;line(xx,0,xx,h,'#29434444')}
+g.fillStyle='#24443c';g.beginPath();g.moveTo(0,h*.84);g.lineTo(w*.22,h*.68);g.lineTo(w*.4,h*.77);g.lineTo(w*.62,h*.58);g.lineTo(w,h*.72);g.lineTo(w,h);g.lineTo(0,h);g.fill();
+g.fillStyle='#476c59';g.globalAlpha=.3;for(let i=0;i<30;i++){let xx=(i*83)%w, yy=(i*137)%h;g.beginPath();g.arc(xx,yy,9+(i%4)*3,0,Math.PI*2);g.fill()}g.globalAlpha=1;
+// obstacles
+obstacles.forEach(o=>{g.fillStyle='#a08d65';g.beginPath();g.arc(o.x*w,o.y*h,o.r,0,Math.PI*2);g.fill();g.strokeStyle='#d2bd8e';g.lineWidth=2;g.stroke();g.fillStyle='#5c6850';g.beginPath();g.arc(o.x*w-5,o.y*h-4,o.r*.42,0,Math.PI*2);g.fill()});
+// landing pad
+g.strokeStyle='#a6d7c5';g.lineWidth=2;g.beginPath();g.arc(w*.5,h*.88,27,0,Math.PI*2);g.stroke();line(w*.5-13,h*.88,w*.5+13,h*.88,'#a6d7c5',2);line(w*.5,h*.88-13,w*.5,h*.88+13,'#a6d7c5',2);
+// waypoint rings
+rings.forEach((r,i)=>{if(i<goal)return;g.strokeStyle=i===goal?'#78f0c5':'#9eb6a366';g.lineWidth=i===goal?4:2;g.beginPath();g.ellipse(r.x*w,r.y*h,18,9,0,0,Math.PI*2);g.stroke();if(i===goal){g.fillStyle='#b1ffe3';g.font='bold 11px system-ui';g.textAlign='center';g.fillText('WP '+(i+1),r.x*w,r.y*h-17)}})
+if(target){g.strokeStyle='#d6fff1';g.setLineDash([4,5]);g.beginPath();g.arc(target.x*w,target.y*h,13,0,Math.PI*2);g.stroke();g.setLineDash([])}
+// drone shadow and body
+let px=x*w,py=y*h;g.fillStyle='#0007';g.beginPath();g.ellipse(px+7,py+13,19,8,0,0,Math.PI*2);g.fill();
+g.save();g.translate(px,py);g.rotate(Math.atan2(vy,vx)*.12);
+g.strokeStyle='#c9e5df';g.lineWidth=5;[[-15,-10],[15,-10],[-15,10],[15,10]].forEach(([a,b])=>{line(a,b,a*1.5,b*1.5,'#d6e6df',3);g.beginPath();g.ellipse(a*1.5,b*1.5,10,3,0,0,Math.PI*2);g.stroke()});
+g.fillStyle='#80dfc1';g.fillRect(-9,-7,18,14);g.fillStyle='#193c40';g.fillRect(-3,-4,6,8);g.restore();
+if(active){$('alt').textContent=Math.round(alt);$('spd').textContent=Math.round(Math.hypot(vx,vy)*85);$('bat').textContent=Math.max(0,Math.round(battery));$('batteryfill').style.width=Math.max(0,battery)+'%';$('batteryfill').style.background=battery<25?'#ff8b65':'#64e0ad';$('link').textContent=Math.max(45,Math.round(100-Math.hypot(vx,vy)*9));$('wp').textContent=goal+' / 5'}
+}
+function loop(now){if(!active)return;let dt=Math.min((now-last)/1000,.04);last=now;
+if(target){let dx=target.x-x,dy=target.y-y;vx+=(dx*2.7-vx*1.5)*dt;vy+=(dy*2.7-vy*1.5)*dt}else{vx*=Math.pow(.12,dt);vy*=Math.pow(.12,dt)}
+x+=vx*dt;y+=vy*dt;x=Math.max(.04,Math.min(.96,x));y=Math.max(.08,Math.min(.94,y));alt=Math.max(3,Math.min(60,12+(1-y)*38));battery-=dt*(.28+Math.hypot(vx,vy)*.22);
+if(goal<5&&Math.hypot(x-rings[goal].x,y-rings[goal].y)<.055){goal++;showToast(goal===5?'Усі точки пройдено! Повернись на майданчик':'Контрольну точку пройдено!')}
+if(goal===5&&Math.hypot(x-.5,y-.88)<.07){active=false;$('overlay').style.display='flex';$('overlay').querySelector('h1').textContent='МІСІЮ ВИКОНАНО';$('overlay').querySelector('p').textContent='Чудовий політ! Ти пройшов усі контрольні точки та повернувся на майданчик.';$('go').textContent='ПОЛЕТІТИ ЩЕ РАЗ'}
+if(battery<=0){active=false;$('overlay').style.display='flex';$('overlay').querySelector('h1').textContent='АКУМУЛЯТОР РОЗРЯДЖЕНО';$('overlay').querySelector('p').textContent='Політ завершено. Спробуй пройти маршрут плавніше.';$('go').textContent='ПОВТОРИТИ ПОЛІТ'}
+if(toastTimer>0){toastTimer-=dt;if(toastTimer<=0)$('toast').style.opacity=0}
+draw(now,dt);if(active)requestAnimationFrame(loop)}
+})();
+</script></body></html>
